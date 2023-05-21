@@ -2,8 +2,9 @@
 //#define DIRECT3D_VERSION 0x0800
 
 #include "kiero.h"
+#include "sire.h"
 
-#include "xrd.h"
+#include "xrd11.h"
 #undef DXGI_SAMPLE_DESC
 #if(DIRECT3D_VERSION < 0x0900)
 typedef LPDIRECT3DDEVICE8 LPDIRECT3DDEVICE9;
@@ -399,111 +400,7 @@ void Init()
 
     DX9Hook::onPresentEvent += [](LPDIRECT3DDEVICE9 pDevice)
     {
-        auto GetAllWindowsFromProcessID = [](DWORD dwProcessID, std::vector<HWND>& vhWnds)
-        {
-            HWND hCurWnd = nullptr;
-            do
-            {
-                hCurWnd = FindWindowEx(nullptr, hCurWnd, nullptr, nullptr);
-                DWORD checkProcessID = 0;
-                GetWindowThreadProcessId(hCurWnd, &checkProcessID);
-                if (checkProcessID == dwProcessID)
-                {
-                    vhWnds.push_back(hCurWnd);
-                }
-            } while (hCurWnd != nullptr);
-        };
-
-        std::vector<HWND> vhWnds;
-        GetAllWindowsFromProcessID(GetCurrentProcessId(), vhWnds);
-        auto hWndPPSSPP = std::find_if(vhWnds.begin(), vhWnds.end(), [](auto hwnd) {
-            std::wstring PPSSPPWnd(L"PPSSPPWnd");
-            std::wstring title(GetWindowTextLength(hwnd) + 1, L'\0');
-            GetClassNameW(hwnd, &title[0], title.size());
-            title.resize(PPSSPPWnd.size());
-            return title == PPSSPPWnd;
-            });
-
-        if (hWndPPSSPP != std::end(vhWnds))
-        {
-            const UINT WM_USER_GET_BASE_POINTER = WM_APP + 0x3118;  // 0xB118
-            const UINT WM_USER_GET_EMULATION_STATE = WM_APP + 0x3119;  // 0xB119
-
-            //if (SendMessage(*hWndPPSSPP, WM_USER_GET_EMULATION_STATE, 0, 0))
-            {
-                enum
-                {
-                    lo,   // Lower 32 bits of pointer to the base of emulated memory
-                    hi,   // Upper 32 bits of pointer to the base of emulated memory
-                    p_lo, // Lower 32 bits of pointer to the pointer to the base of emulated memory
-                    p_hi, // Upper 32 bits of pointer to the pointer to the base of emulated memory
-                };
-
-                uint32_t high = SendMessage(*hWndPPSSPP, WM_USER_GET_BASE_POINTER, 0, hi);
-                uint32_t low = SendMessage(*hWndPPSSPP, WM_USER_GET_BASE_POINTER, 0, lo);
-                uint64_t ptr = (uint64_t(high) << 32 | low); // +0x08804000;
-
-                if (ptr)
-                {
-                    auto gMenuActivated = *(uint8_t*)(ptr + 0x08BC9100 + 0x20);
-                    auto pRwMatrix = *(uint32_t*)(ptr + 0x08BB4020);
-                    if (!gMenuActivated && pRwMatrix)
-                    {
-                        uint64_t TheCamera = ptr + 0x08BC7E30;
-
-                        auto CCullZones_CamNoRain = [&ptr]() -> bool
-                        {
-                            return (*reinterpret_cast<uint32_t*>(ptr + 0x8BB456C) & 8) != 0;
-                        };
-
-                        auto CCullZones_PlayerNoRain = [&ptr]() -> bool
-                        {
-                            return (*reinterpret_cast<uint32_t*>(ptr + 0x8BB4570) & 8) != 0;
-                        };
-
-                        auto RslCameraGetNode = [&ptr](auto a1) -> uint32_t
-                        {
-                            return *(uint32_t*)(ptr + a1 + 4);
-                        };
-
-                        auto sub_8A1A5D4 = [](auto a1) -> uint32_t
-                        {
-                            return a1 + 16;
-                        };
-
-                        auto RslCamera = *(uint32_t*)(TheCamera + 0x7BC);
-                        if (RslCamera)
-                        {
-                            auto Node = RslCameraGetNode(RslCamera);
-                            auto pCamMatrix = (RwMatrix*)(ptr + sub_8A1A5D4(Node));
-                            auto CWeather_Rain = *reinterpret_cast<float*>(ptr + 0x08BB3C38);
-                            auto CCutsceneMgr__ms_running = *reinterpret_cast<uint8_t*>(ptr + (*reinterpret_cast<uint32_t*>(ptr + 0x8BB345C) + 0x13));
-                            auto CGame__currArea = *reinterpret_cast<uint32_t*>(ptr + 0x08BB194C);
-
-                            if (CGame__currArea != 0 || CCullZones_CamNoRain() || CCullZones_PlayerNoRain() || CCutsceneMgr__ms_running)
-                                WaterDrops::ms_rainIntensity = 0.0f;
-                            else
-                                WaterDrops::ms_rainIntensity = CWeather_Rain;
-
-                            WaterDrops::bRadial = false;
-
-                            WaterDrops::up = { pCamMatrix->up.x,          pCamMatrix->up.y,    pCamMatrix->up.z };
-                            WaterDrops::at = { pCamMatrix->at.x,          pCamMatrix->at.y,    pCamMatrix->at.z };
-                            WaterDrops::right = { pCamMatrix->right.x,    pCamMatrix->right.y, pCamMatrix->right.z };
-                            WaterDrops::pos = { pCamMatrix->pos.x,       pCamMatrix->pos.y,    pCamMatrix->pos.z };
-
-                            WaterDrops::Process(pDevice);
-                            WaterDrops::Render(pDevice);
-                        }
-                    }
-                }
-            }
-        }
-        else
-        {
-            WaterDrops::Process(pDevice);
-            WaterDrops::Render(pDevice);
-        }
+     
     };
 
     DX9Hook::onResetEvent += [](LPDIRECT3DDEVICE9 pDevice)
@@ -547,27 +444,28 @@ void Init()
 #if KIERO_INCLUDE_D3D11
     DX11Hook::onInitEvent += []()
     {
-        
+
     };
     
     DX11Hook::onPresentEvent += [](IDXGISwapChain* pSwapChain)
     {
-        //MessageBox(0, 0, 0, 0);
+        WaterDrops::Process(pSwapChain);
+        WaterDrops::Render(pSwapChain);
     };
     
     DX11Hook::onShutdownEvent += []()
     {
-    
+        WaterDrops::Shutdown();
     };
 
-    DX11Hook::onBeforeResizeEvent += [](IDXGISwapChain*, UINT, UINT, UINT, DXGI_FORMAT, UINT)
+    DX11Hook::onBeforeResizeEvent += [](IDXGISwapChain* pSwapChain, UINT, UINT, UINT, DXGI_FORMAT, UINT)
     {
-
+        WaterDrops::BeforeResize(pSwapChain);
     };
 
-    DX11Hook::onAfterResizeEvent += [](IDXGISwapChain*, UINT, UINT, UINT, DXGI_FORMAT, UINT)
+    DX11Hook::onAfterResizeEvent += [](IDXGISwapChain* pSwapChain, UINT, UINT width, UINT height, DXGI_FORMAT, UINT)
     {
-
+        WaterDrops::AfterResize(pSwapChain, width, height);
     };
 #endif
 
