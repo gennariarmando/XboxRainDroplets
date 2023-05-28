@@ -4,11 +4,6 @@
 #include <cmath>
 
 #include <time.h>
-#include <injector\injector.hpp>
-#include <injector\hooking.hpp>
-#include <injector\calling.hpp>
-#include <injector\assembly.hpp>
-#include <injector\utility.hpp>
 #include <algorithm>
 #include <thread>
 #include <mutex>
@@ -185,7 +180,7 @@ public:
         return GetTimeStep() / 50.0f * 1000.0f;
     }
 
-    static inline void Process(IDXGISwapChain* pSwapchain)
+    static inline void Process()
     {
         if (!fTimeStep)
         {
@@ -205,7 +200,7 @@ public:
         }
 
         if (!ms_initialised)
-            Init(pSwapchain);
+            Init();
 
         ProcessGlobalEmitters();
         CalculateMovement();
@@ -565,14 +560,10 @@ public:
 
     static inline void Shutdown() {
         Reset();
-        Sire::Shutdown(Sire::SIRE_DX11);
     }
 
-    static inline void Init(IDXGISwapChain* pSwapChain)
+    static inline void Init()
     {
-        // Init immediate renderer
-        Sire::Init(Sire::SIRE_DX11, pSwapChain);
-
         // Get back buffer
         auto backBuffer = Sire::GetBackBuffer(0);
         Sire::SetViewport(0, 0, backBuffer->w, backBuffer->h);
@@ -598,7 +589,7 @@ public:
         ms_fbHeight = backBuffer->h;
         ms_scaling = ms_fbHeight / 480.0f;
 
-        ms_maskTex = Sire::CreateTexture(300, 300, dropMask);
+        ms_maskTex = Sire::CreateTexture(drop_mask.width, drop_mask.height, (uint8_t*)drop_mask.pixel_data);
 
         if (!ms_maskTex)
         {
@@ -669,7 +660,7 @@ public:
         ms_numBatchedDrops++;
     }
 
-    static inline void Render(IDXGISwapChain* pSwapChain)
+    static inline void Render()
     {
         if (!ms_enabled || ms_numDrops <= 0)
             return;
@@ -677,45 +668,42 @@ public:
         if (!ms_initialised)
             return;
 
+        if (!Sire::IsRendererActive())
+            return;
+
         auto backBuffer = Sire::GetBackBuffer(0);
         Sire::CopyResource(ms_tex, backBuffer);
         Sire::Release(backBuffer);
 
-        Sire::SetProjectionMode(Sire::ORTHOGRAPHIC);
+        Sire::SetRenderState(Sire::SIRE_BLEND_ALPHATESTENABLE, true);
+        Sire::SetRenderState(Sire::SIRE_BLEND_SRCBLEND, Sire::SIRE_BLEND_SRC_ALPHA);
+        Sire::SetRenderState(Sire::SIRE_BLEND_DESTBLEND, Sire::SIRE_BLEND_INV_SRC_ALPHA);
+        Sire::SetRenderState(Sire::SIRE_BLEND_BLENDOP, Sire::SIRE_BLEND_OP_ADD);
+        Sire::SetRenderState(Sire::SIRE_BLEND_SRCBLENDALPHA, Sire::SIRE_BLEND_ONE);
+        Sire::SetRenderState(Sire::SIRE_BLEND_DESTBLENDALPHA, Sire::SIRE_BLEND_ZERO);
+        Sire::SetRenderState(Sire::SIRE_BLEND_BLENDOPALPHA, Sire::SIRE_BLEND_OP_ADD);
+        Sire::SetRenderState(Sire::SIRE_BLEND_WRITEMASK, Sire::SIRE_COLOR_WRITE_ENABLE_ALL);
+        Sire::SetRenderState(Sire::SIRE_BLEND_CULLMODE, Sire::SIRE_CULL_NONE);
+        Sire::SetRenderState(Sire::SIRE_BLEND_FILLMODE, Sire::SIRE_FILL_SOLID);
+        Sire::SetRenderState(Sire::SIRE_BLEND_STENCILENABLE, FALSE);
+        Sire::SetRenderState(Sire::SIRE_BLEND_COLORWRITEENABLE, 0xFFFFFFFF);
+
+        Sire::SetProjectionMode(Sire::SIRE_PROJ_ORTHOGRAPHIC);
         Sire::SetTexture(ms_tex, ms_maskTex);
         Sire::Begin();
-
+        
         ms_numBatchedDrops = 0;
         for (auto& drop : ms_drops)
             if (drop.active)
                 AddToRenderList(&drop);
 
-        Sire::SetRenderState(Sire::D3DRS_ALPHATESTENABLE, true);
-        Sire::SetRenderState(Sire::D3DRS_SRCBLEND, D3D11_BLEND_SRC_ALPHA);
-        Sire::SetRenderState(Sire::D3DRS_DESTBLEND, D3D11_BLEND_INV_SRC_ALPHA);
-        Sire::SetRenderState(Sire::D3DRS_BLENDOP, D3D11_BLEND_OP_ADD);
-        Sire::SetRenderState(Sire::D3DRS_SRCBLENDALPHA, D3D11_BLEND_ONE);
-        Sire::SetRenderState(Sire::D3DRS_DESTBLENDALPHA, D3D11_BLEND_ZERO);
-        Sire::SetRenderState(Sire::D3DRS_BLENDOPALPHA, D3D11_BLEND_OP_ADD);
-        Sire::SetRenderState(Sire::D3DRS_WRITEMASK, D3D11_COLOR_WRITE_ENABLE_ALL);
-        Sire::SetRenderState(Sire::D3DRS_CULLMODE, D3D11_CULL_NONE);
-        Sire::SetRenderState(Sire::D3DRS_FILLMODE, D3D11_FILL_SOLID);
-        Sire::SetRenderState(Sire::D3DRS_STENCILENABLE, FALSE);
-        Sire::SetRenderState(Sire::D3DRS_COLORWRITEENABLE, 0xFFFFFFFF);
-
         Sire::SetIndices(ms_indexBuf, ms_numBatchedDrops * 6);
         Sire::End();
     }
 
-    static inline void BeforeResize(IDXGISwapChain* pSwapChain) {
-
-    }
-
     static inline void AfterResize(IDXGISwapChain* pSwapChain, uint32_t width, uint32_t height) {        
         Shutdown();
-        Init(pSwapChain);
-
-        Sire::SetViewport(0, 0, width, height);
+        Init();
     }
 };
 

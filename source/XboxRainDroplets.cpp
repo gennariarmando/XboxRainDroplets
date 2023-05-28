@@ -5,6 +5,7 @@
 #include "sire.h"
 
 #include "xrd11.h"
+
 #undef DXGI_SAMPLE_DESC
 #if(DIRECT3D_VERSION < 0x0900)
 typedef LPDIRECT3DDEVICE8 LPDIRECT3DDEVICE9;
@@ -400,17 +401,20 @@ void Init()
 
     DX9Hook::onPresentEvent += [](LPDIRECT3DDEVICE9 pDevice)
     {
-     
+        Sire::Init(Sire::SIRE_RENDERER_DX9, pDevice);
+        WaterDrops::Process();
+        WaterDrops::Render();
     };
 
     DX9Hook::onResetEvent += [](LPDIRECT3DDEVICE9 pDevice)
     {
         WaterDrops::Reset();
+        Sire::ReInit(pDevice);
     };
 
     DX9Hook::onShutdownEvent += []()
     {
-
+        WaterDrops::Shutdown();
     };
 #endif
 
@@ -444,28 +448,30 @@ void Init()
 #if KIERO_INCLUDE_D3D11
     DX11Hook::onInitEvent += []()
     {
-
     };
     
     DX11Hook::onPresentEvent += [](IDXGISwapChain* pSwapChain)
     {
-        WaterDrops::Process(pSwapChain);
-        WaterDrops::Render(pSwapChain);
+        Sire::Init(Sire::SIRE_RENDERER_DX11, pSwapChain);
+        WaterDrops::Process();
+        WaterDrops::Render();
     };
     
     DX11Hook::onShutdownEvent += []()
     {
+        Sire::Shutdown(Sire::SIRE_RENDERER_DX11);
         WaterDrops::Shutdown();
     };
 
     DX11Hook::onBeforeResizeEvent += [](IDXGISwapChain* pSwapChain, UINT, UINT, UINT, DXGI_FORMAT, UINT)
     {
-        WaterDrops::BeforeResize(pSwapChain);
     };
 
     DX11Hook::onAfterResizeEvent += [](IDXGISwapChain* pSwapChain, UINT, UINT width, UINT height, DXGI_FORMAT, UINT)
     {
         WaterDrops::AfterResize(pSwapChain, width, height);
+        Sire::ReInit(pSwapChain);
+        Sire::SetViewport(0.0f, 0.0f, width, height);
     };
 #endif
 
